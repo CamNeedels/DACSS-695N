@@ -1,0 +1,446 @@
+---
+title: "Short Assignment 3"
+subtitle: "DACSS 695N Social Network Analysis"
+author: "E. Song/ Cameron Needels"
+date: "February 24, 2024"
+format: 
+  html:
+    toc: true
+    toc-depth: 2
+    toc-title: Contents
+    toc-location: left
+    code-fold: false
+    html-math-method: katex
+    theme: flatly
+    smooth-scroll: true
+    link-external-icon: true
+    link-external-newwindow: true
+    citations-hover: true
+    footnotes-hover: true
+    font-size: 80%
+editor: visual
+---
+
+<!--ATTENTION!-->
+
+```{=html}
+<!--Please knit this qmd to an html and submit both qmd and html files. Add your name (next to mine) in the ymal above. Also, don't forget the last part of this tutorial (i.e., Problems 4 ~ 7) has QUESTIONS you have to solve! Enjoy. This assignment is DUE March 3 @ 11:59 pm.
+-->
+```
+# Problem 1
+
+Below are social network data collected from members of a book club at a university. The students were asked to rate ‘how much they interacted online’ with the other students over the last two weeks on a five-point Likert scale with 1 being ‘very little’ and 5 being ‘a great deal.’
+
+a.  Enter the data in a spreadsheet, import it, and create a statnet network object.
+
+```{r echo=TRUE}
+# run if necessary: rm(list=ls())
+getwd()
+# setwd()
+```
+
+```{r message = FALSE}
+bookclub.el <- read.csv("shortassignment3_q1_bookclub.csv",
+                        header = FALSE)
+head(bookclub.el)
+
+# creating a statnet object
+library(statnet)
+
+bookclub.st <- network(bookclub.el,
+                       directed = TRUE)
+
+# check:
+summary(bookclub.st)
+
+# Let's check the edge weights are in place properly.
+# with statnet: NETWORKOBJECT[ , ]
+bookclub.st[,]
+
+# converting to an adjacency matrix.. 
+# what's missing here?
+# In statnet edges and edge weights are considered separate. 
+# To see a particular weight, use the edge attribute shorthand %e% and 
+# to get the full netowrk with weights, use: as.sociomatrix.sna()
+# Note that the network command called the weights by the column name
+# from the input file.
+list.edge.attributes(bookclub.st)
+
+# the input csv file didn't have no header for the weight,
+# so we have "V3" created when it was imported.
+# to see whether it's really associated with our network object
+bookclub.st %e% "V3"
+# Yes!
+
+# now let's create an adjacency matrix with the weights:
+as.sociomatrix.sna(bookclub.st, "V3")
+
+# If you like, we can change rename the edge attribute name in multiple ways:
+bookclub.st %e% "freq" <- bookclub.st %e% "V3"
+
+identical(bookclub.st %e% "freq", bookclub.st %e% "V3")
+```
+
+```{r}
+# Symmetrize matrix
+
+# sna offers a handy function: symmetrize(graph, rule)
+# 4 rules:
+## upper: copy the upper triangle over the lower triangle
+## lower: Copy the lower triangle over the upper triangle
+## strong: i <--> j iff i -> j AND j -> i
+## weak: i <--> j iff i -> j OR j -> i
+
+symmetrize(bookclub.st, rule = "strong")
+
+symmetrize(bookclub.st, rule = "weak") # no difference, Why?
+# Because all five students are communicated with all others!
+```
+
+```{r}
+# Let's play with some other approaches:
+# First, let's extract a weighteed matrix from bookclub.st:
+bookclub.mw <- as.matrix(bookclub.st, attrname = "freq")
+bookclub.mw
+
+# OR
+bookclub.mw2 <- as.sociomatrix.sna(bookclub.st, "freq")
+bookclub.mw2
+
+# Now, let's dichotomize the data using greater than 3:
+bookclub.m.dicho <- ifelse(bookclub.mw >= 3, 1, 0)
+bookclub.m.dicho
+
+# wow. now we have a quite different matrix.
+```
+
+# Problem 2
+
+Demographic and attribute data were also collected. Data include age, gender and attitude towards premarital sex on a Likert scale from 1 to 5 (with 1 being completely against and 5 being completely in favor).
+
+```{r}
+attributes <- data.frame(
+  name = c("Mark", "Gene", "Silvia", "Sarah", "Tim"),
+  age = c(18, 25, 19, 21, 22),
+  gender = c(1, 1, 2, 2, 1), # 1: male, 2: female
+  prems = c(4, 2, 2, 5, 1) # attitude towards premarital sex (1 to 5)
+)
+
+head(attributes)
+```
+
+```{r}
+# Let's add these attributes to the network object:
+# You could take different approaches!
+# Let's create from scratch
+## using bookclub.el (edgelist) and attributes
+
+## Let's create an attribute "list" object
+attribute_list <- do.call(list, attributes)
+head(attribute_list)
+
+bookclub.st.3 <- network(bookclub.el,
+                         directed = TRUE,
+                         matrix.type = "edgelist",
+                         vertex.attr = attribute_list)
+bookclub.st.3
+```
+
+```{r}
+# Or, you could add each attribute to the network object
+# now let's use the first network object we created: bookclub.st
+# set.vertex.attribute()
+set.vertex.attribute(bookclub.st,
+                     attrname = "gender",
+                     value = attributes$gender)
+bookclub.st %v% "gender"
+```
+
+```{r}
+# Converting attributes into matrix/network
+# Let's put the network objects aside
+# And create a slightly different type of matrix
+# by converting a vertex attribute into a network
+# let's start with gender
+# 1 for students of the same gender 
+# 0 for different gender
+
+# are we going to use
+as.sociomatrix.sna(bookclub.st.3, attr = "gender")
+# well.. we can't!
+```
+
+```{r message=FALSE}
+# Let's then do it manually:
+# first create an empty matrix
+library(tidyverse)
+gender <- attributes %>%
+  select(name, gender) 
+
+
+gender
+
+# first create a matrix
+gender.m <- matrix(0, 
+                   nrow = nrow(gender),
+                   ncol = nrow(gender))
+dim(gender.m)
+
+for(i in 1:nrow(gender)){
+  for(j in 1:nrow(gender)){
+    gender.m[i, j] <- ifelse(gender$gender[i] == gender$gender[j], 1, 0)
+  }
+}
+
+diag(gender.m) <- 0
+
+colnames(gender.m) <- gender$name
+rownames(gender.m) <- gender$name
+
+gender.m
+```
+
+```{r}
+# one more: let's do the same procedure
+# with a continuous variable: age
+# by taking absolute difference
+
+age <- attributes %>%
+  select(name, age) 
+
+
+age
+
+# first create a matrix
+age.abd.m <- matrix(0, 
+                   nrow = nrow(age),
+                   ncol = nrow(age))
+dim(age.abd.m)
+
+# use abs() to compute absolute difference
+for(i in 1:nrow(age)){
+  for(j in 1:nrow(age)){
+    age.abd.m[i, j] <- abs(age$age[i] - age$age[j])
+    age.abd.m[j, i] <- abs(age$age[j] - age$age[i])
+  }
+}
+
+diag(gender.m) <- 0
+
+colnames(age.abd.m) <- age$name
+rownames(age.abd.m) <- age$name
+
+age.abd.m
+
+
+# Let's check all values are correct
+age
+
+```
+
+```{r}
+# Practice: Convert the Attitude variable into a matrix using the absolute difference and create a network. What do the values represent?
+
+
+
+```
+
+# Problem 3
+
+In addition to the one-mode social network data above, two-mode data were also collected on which university events each had attended over the last six months. Here are the data:
+
+-   Mark went to Hawking's Lecture.
+-   Gene went to Hawking's Lecture and Spring Concert.
+-   Silvia went to Hawking's Lecture, Halloween Event, and Fall Dance.
+-   Sarah went to Hawking's Lecture, Halloween Event, Spring Concert, and Fall Dance.
+-   Tim went to Halloween Event, Spring Concert, and Fall Dance.
+
+```{r}
+# Format the data as a spreadsheet file using a nodelist format, and save as a CSV file, then read into R.
+bookclub.tmode <- read_csv("shortassignment_twomode.csv")
+bookclub.tmode
+```
+
+```{r}
+# okay. what should be the next step?
+# data wrangling
+bookclub.tmode.el <- pivot_longer(bookclub.tmode,
+                                  cols = starts_with("Event"),
+                                  names_to = "Event",
+                                  values_to = "events"
+                                  ) %>%
+                      select(-Event) %>%
+                      filter(!is.na(events))
+```
+
+```{r}
+# Good! let's create a network object
+bookclub.tm.st <- as.network(bookclub.tmode.el,
+                             directed = FALSE,
+                             bipartite = TRUE) # logical
+
+bookclub.tm.st
+
+bookclub.tm.st %v% "vertex.names"
+
+bookclub.incidence.m <- bookclub.tm.st[,]
+
+bookclub.tmode
+```
+
+```{r message = FALSE}
+# using igraph
+detach(package:statnet)
+library(igraph)
+
+# multiple ways are available
+# 1. use graph.data.frame (if you have an edgelist)
+bookclub.tm.ig <- graph.data.frame(bookclub.tmode.el,
+                                   directed = FALSE)
+# and remember: igraph doesn't automatically recotnize two-mode networks
+# it's necessary to tell igraph that two types of nodes are in the data
+# use bipartite.mapping()
+
+bipartite.mapping(bookclub.tm.ig)
+names(bipartite.mapping(bookclub.tm.ig))
+
+V(bookclub.tm.ig)$type <- bipartite.mapping(bookclub.tm.ig)$type
+# type == FALSE: node set 1 (i.e., students)
+# type == TRUE: node set 2 (i.e., events)
+
+
+# 2. or if you have an incidence matrix
+## use graph_from_incidence_matrix
+bookclub.tm.ig2 <- graph_from_incidence_matrix(incidence = bookclub.incidence.m,
+                                               mode = "all")
+
+bookclub.tm.ig2
+
+V(bookclub.tm.ig2)$type # automatically created!
+
+# take a look at this: this is a bipartite matrix!
+bookclub.tm.ig2[,]
+
+# let's go back to statnet
+detach(package:igraph)
+library(statnet)
+```
+
+# Problem 4
+
+Finally, the students were asked who talks to whom about school-related matters.
+
+-   Mark reports he talks to Gene, Silvia, and Sarah
+-   Gene reports he talks to Tim.
+-   Silvia reports she talks to Tim and Sarah.
+-   Sarah reports she talks to Tim.
+-   Tim reports he talks to Sarah.
+
+```{r}
+# Assignment:
+# Q1. Format the data as a spreadsheet file the edgelist format. Import the CSV file into R.
+detach(package:statnet)
+library(igraph)
+
+students_talk <- read.csv("dacss695n_prob4.csv",
+                        header = FALSE)
+students_talk <- network(bookclub.el,
+                       directed = TRUE)
+
+as.sociomatrix.sna(students_talk)
+```
+
+```{r}
+# Assignment:
+# Q2. Symmetrize the network using the 'OR' option
+
+
+symmetrize(students_talk, rule = "weak")
+
+summary(students_talk)
+```
+
+# Problem 5
+
+Imagine you would want to combine the dichotimized online interaction network (Problem 1) and the face-to-face talking network (Problem 4) into one matrix.
+
+a.  How would you go about making sure you are able to distinguish between ties where
+
+-   
+
+    (a) members only talk face-to-face, but do not interact online
+
+-   I would make that number 3 because it is a significant relationship but not the strongest
+
+```         
+(b) members only interact online, but not face-to-face,
+```
+
+-   I would make this 2 because its a connection but they are not as strong as in person.
+
+```         
+(c) members do both, and
+```
+
+-   4 this would be the strongest relationship by far and the most significant
+
+```         
+(d) members do neither?
+
+    1 this is the weakest connection by far
+```
+
+Use R to answer!
+
+```{r}
+
+library(statnet)
+
+# Load the datasets from previous problems
+online_interact <- as.sociomatrix.sna(bookclub.st, attr = "freq")
+face_to_face <- as.sociomatrix.sna(students_talk)
+
+# Combine the two into one matrix
+combined_network <- online_interact + face_to_face
+
+# Define thresholds for distinguishing between different types of ties
+only_online_threshold <- 1 
+only_face_to_face_threshold <- 1
+
+# Create a new matrix to store the types of ties
+tie_types <- matrix(0, nrow = nrow(combined_network), ncol = ncol(combined_network))
+
+# Assign values to distinguish between different types of ties
+tie_types[combined_network < only_online_threshold] <- 2  # Members only interact online
+tie_types[combined_network == only_face_to_face_threshold] <- 3  # Members only talk face-to-face
+tie_types[combined_network > only_face_to_face_threshold & combined_network > only_online_threshold] <- 4  # Members do both
+tie_types[combined_network == 0] <- 1  # Members do neither
+
+# Display the combined matrix with tie types
+tie_types
+
+```
+
+# Problem 6
+
+Suppose you asked each child in a school with 783 students to name their three best friends. How would you store that data? What if you were to ask them to rank their three choices from closest (1) to least close (3)? How would you store the data?
+
+Each student would be a node in the graph. For each of those students there will be directed egdes to the friends they named. I would store it in an adjacency matrix. If I had to ask them to rank their friends I would make a variable that would indicate their rank (1,2, or 3) and this would make it so each edge will have a weight.
+
+# Problem 7
+
+Check the [IMDb Non-Commercial Datasets](https://developer.imdb.com/non-commercial-datasets/). Read carefully the page and think about potential networks you'd like to construct. Discuss the following items:
+
+-   Node set(s)
+    -   **Movies/TV Shows (Titles)**: Each title will be represented as a node in the network.
+    -   **Genres**: Genres of movies/TV shows could also be represented as nodes.
+-   Relationships of interest
+    -   **Genre Relationship**: Connects titles with their corresponding genres.
+    -   **Similarity Relationship**: Based on the ratings, we can establish a similarity measure between titles.
+-   Potential research questions: one or two questions should be enough.
+    -   Does the average rating of a title correlate with the amount of votes a show receives?
+    -   Do similar titles receive similar rating scores?
+    -   Does a certain genre receive better ratings than the other genres?
+-   Indicate which files you need to download and explain why.
+    -   **title.ratings.tsv.gz**: This file contains the necessary information about the titles, including their unique identifier, average ratings, and the number of votes.
+    -   **title.basics.tsv.gz**: The title, genre, and the year of release are all useful and necessary pieces of information.
